@@ -40,6 +40,7 @@ Each sidewalk segment is assigned a score based on:
 - **Slope:** Incline percentage, which significantly impacts manual wheelchair users.
 
 ---
+```
 ## Project Structure
 Datahon-shared-repo-main/
 │
@@ -63,6 +64,7 @@ Datahon-shared-repo-main/
 │   └── speech_recognition.ipynb
 │
 └── .gitignore
+```
 ---
 
 ## Future Roadmap
