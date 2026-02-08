@@ -11,7 +11,70 @@ import networkx as nx
 from pathlib import Path
 
 st.set_page_config(layout="wide")
+# Add this near the top of your file, after st.set_page_config()
 
+def add_seattle_rain_animation():
+    """Add Seattle-themed rain animation to the background"""
+    st.markdown("""
+    <style>
+    /* Rain animation */
+    .rain-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+    }
+    
+    .raindrop {
+        position: absolute;
+        width: 2px;
+        height: 50px;
+        background: linear-gradient(to bottom, rgba(174, 194, 224, 0.5), transparent);
+        animation: fall linear infinite;
+    }
+    
+    @keyframes fall {
+        to {
+            transform: translateY(100vh);
+        }
+    }
+    
+    /* Make main content appear above rain */
+    .main > div {
+        position: relative;
+        z-index: 1;
+    }
+    
+    /* Optional: Add subtle Seattle fog effect */
+    body {
+        background: linear-gradient(to bottom, #2c3e50 0%, #34495e 100%);
+    }
+    </style>
+    
+    <div class="rain-container" id="rain"></div>
+    
+    <script>
+    // Generate raindrops
+    const rainContainer = document.getElementById('rain');
+    if (rainContainer && rainContainer.children.length === 0) {
+        for (let i = 0; i < 50; i++) {
+            const drop = document.createElement('div');
+            drop.className = 'raindrop';
+            drop.style.left = Math.random() * 100 + '%';
+            drop.style.animationDuration = (Math.random() * 1 + 0.5) + 's';
+            drop.style.animationDelay = Math.random() * 2 + 's';
+            rainContainer.appendChild(drop);
+        }
+    }
+    </script>
+    """, unsafe_allow_html=True)
+
+# Call this function right after st.set_page_config()
+add_seattle_rain_animation()
 # --- Sidebar for Navigation ---
 # --- Sidebar for Navigation ---
 # Custom CSS to inject for styling the buttons if needed (optional)
