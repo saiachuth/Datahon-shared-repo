@@ -126,12 +126,13 @@ if st.session_state.user_mode == "Pedestrian":
     
     # Load graph with GNN predictions (cached)
     @st.cache_resource
-    def load_graph_with_predictions():
+    def load_graph_with_predictions(dataset_file, pred_column):
         """Load Seattle street network and attach GNN risk predictions."""
         import pickle
         import os
         
-        graph_cache_file = "seattle_graph_with_predictions.pkl"
+        # Use dataset-specific cache file
+        graph_cache_file = f"seattle_graph_{dataset_file.replace('.csv', '')}.pkl"
         
         # Check if cached graph exists
         if os.path.exists(graph_cache_file):
@@ -150,9 +151,9 @@ if st.session_state.user_mode == "Pedestrian":
             G_full = ox.graph_from_place("Seattle, Washington, USA", network_type="walk")
             G_full = nx.Graph(G_full)
         
-        with st.spinner("📊 Loading GNN predictions and attaching to graph... (~5 seconds)"):
-            # Load GNN predictions
-            df = pd.read_csv("mobility_issue_assistance.csv")
+        with st.spinner(f"📊 Loading GNN predictions from {dataset_file} and attaching to graph... (~5 seconds)"):
+            # Load GNN predictions from selected dataset
+            df = pd.read_csv(dataset_file)
             
             # Create coordinate key function
             def key(lat, lon):
@@ -175,7 +176,7 @@ if st.session_state.user_mode == "Pedestrian":
                 
                 if data_row is not None:
                     # Use GNN prediction as risk_norm
-                    G_full[u][v]["risk_norm"] = float(data_row["pred"]) * 10.0  # Scale to 0-10
+                    G_full[u][v]["risk_norm"] = float(data_row[pred_column]) * 10.0  # Scale to 0-10
                 else:
                     # Default: safe edge
                     G_full[u][v]["risk_norm"] = 0.0
@@ -234,12 +235,57 @@ if st.session_state.user_mode == "Pedestrian":
         except Exception as e:
             return []
 
+    # User type selection (Normal User, Blind Assistance, Mobility Issue)
+    st.subheader("Select User Type")
+    user_type_option = st.radio(
+        "Choose the accessibility profile for route optimization:",
+        options=["🚶 Normal User", "👁️ Blind Assistance", "♿ Mobility Issue"],
+        index=0,
+        horizontal=True,
+        key="user_type_selection"
+    )
+    
+    # Map user selection to dataset file, prediction column, and safety percentile threshold
+    dataset_mapping = {
+        "🚶 Normal User": ("normal_user.csv", "pred_normal", 90),  # Top 5% are dangerous
+        "👁️ Blind Assistance": ("blind_assitance.csv", "pred_blind", 80),  # Top 10% are dangerous
+        "♿ Mobility Issue": ("mobility_issue_assistance.csv", "pred", 85)  # Top 15% are dangerous
+    }
+    selected_dataset, pred_column, safety_percentile = dataset_mapping[user_type_option]
+    
+    st.info(f"ℹ️ Using dataset: **{selected_dataset}** for route calculation")
+    st.markdown("---")
+    
+    # Detect user type change and auto-trigger route recalculation
+    if "prev_user_type" not in st.session_state:
+        st.session_state.prev_user_type = user_type_option
+    
+    user_type_changed = (st.session_state.prev_user_type != user_type_option)
+    if user_type_changed:
+        st.session_state.prev_user_type = user_type_option
+        # Set flag to auto-calculate route
+        st.session_state.auto_calculate = True
+
+    # Default coordinates for demonstration (users can still change them)
+    DEFAULT_START = ("Magnolia Park, 1461, Magnolia Boulevard West, Seattle, WA, 98199", (47.63378855, -122.39837658))
+    DEFAULT_DESTINATION = ("All City Fence Co., 36, South Hudson Street, Georgetown, Seattle, King County, Washington, 98134, United States", (47.5578313, -122.33716503))
+    
+    # Initialize default coordinates in session state if not already set
+    if "start_coords" not in st.session_state:
+        st.session_state.start_coords = DEFAULT_START
+    if "end_coords" not in st.session_state:
+        st.session_state.end_coords = DEFAULT_DESTINATION
+    
+    # Show default values to user
+    st.info(f"📍 **Default Route:** From Magnolia Park to All City Fence Co. (Georgetown). You can change these locations below.")
+    
     col1, col2 = st.columns(2)
     with col1:
         start_loc_selection = st_searchbox(
             search_locationiq,
             key="start_loc_search",
             label="From (Start Location)",
+            placeholder="Magnolia Park, 1461, Magnolia Boulevard West, Seattle, WA, 98199",
             default=None
         )
     with col2:
@@ -247,26 +293,49 @@ if st.session_state.user_mode == "Pedestrian":
             search_locationiq,
             key="end_loc_search",
             label="To (Destination)",
+            placeholder="All City Fence Co., 36, South Hudson Street, Georgetown, Seattle",
             default=None
         )
 
-    # Store coordinates in session state
+    # Store coordinates in session state (only update if user selects new location)
     if start_loc_selection:
         st.session_state.start_coords = start_loc_selection
     if end_loc_selection:
         st.session_state.end_coords = end_loc_selection
     
+    # Display current selections
+    st.markdown("**Current Selection:**")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if isinstance(st.session_state.start_coords, tuple) and len(st.session_state.start_coords) == 2:
+            if isinstance(st.session_state.start_coords[1], tuple):
+                st.caption(f"🟢 From: {st.session_state.start_coords[0]}")
+            else:
+                st.caption(f"🟢 From: {st.session_state.start_coords}")
+    with col_b:
+        if isinstance(st.session_state.end_coords, tuple) and len(st.session_state.end_coords) == 2:
+            if isinstance(st.session_state.end_coords[1], tuple):
+                st.caption(f"🔴 To: {st.session_state.end_coords[0]}")
+            else:
+                st.caption(f"🔴 To: {st.session_state.end_coords}")
+    
     # Only save to JSON when both are selected (avoid writing file on every rerun)
     # This prevents unnecessary file I/O that could cause glitches
+    
+    # Check if we should auto-calculate (when user type changes)
+    should_calculate = st.button("Find Safe Route")
+    if "auto_calculate" in st.session_state and st.session_state.auto_calculate:
+        should_calculate = True
+        st.session_state.auto_calculate = False  # Reset flag after triggering
 
-    if st.button("Find Safe Route"):
+    if should_calculate:
         if "start_coords" not in st.session_state or "end_coords" not in st.session_state:
             st.error("Please select both start and destination locations.")
         else:
             import math  # Import here for route calculation
             
-            # Load graph
-            G_full = load_graph_with_predictions()
+            # Load graph with selected dataset
+            G_full = load_graph_with_predictions(selected_dataset, pred_column)
             
             # Extract coordinates - handle both tuple formats
             # st_searchbox returns (display_name, (lat, lon))
@@ -317,6 +386,10 @@ if st.session_state.user_mode == "Pedestrian":
                         weight="wheelchair_cost"
                     )
                     
+                    # Calculate dynamic risk threshold based on safety_percentile
+                    all_risks = [G_full[u][v].get("risk_norm", 0.0) for u, v in G_full.edges()]
+                    risk_threshold = np.percentile(all_risks, safety_percentile)
+                    
                     # Extract route metrics
                     route_edges = list(zip(path_nodes[:-1], path_nodes[1:]))
                     route_risks = []
@@ -332,7 +405,7 @@ if st.session_state.user_mode == "Pedestrian":
                         route_risks.append(risk_norm)
                         route_lengths.append(length)
                         total_length += length
-                        if risk_norm >= 7:
+                        if risk_norm >= risk_threshold:
                             high_risk_count += 1
                     
                     avg_risk = np.mean(route_risks) if route_risks else 0
@@ -341,7 +414,9 @@ if st.session_state.user_mode == "Pedestrian":
                     # Create Folium map
                     m = folium.Map(
                         location=[(start_lat + end_lat) / 2, (start_lon + end_lon) / 2],
-                        zoom_start=13
+                        zoom_start=13,
+                        tiles='CartoDB Positron',  # Light grayscale map
+                        attr='CartoDB'
                     )
                     
                     # Plot safest route (thick BLUE line)
@@ -355,13 +430,13 @@ if st.session_state.user_mode == "Pedestrian":
                     ).add_to(m)
                     
                     # Add all edges (green = safe, red = high risk)
-                    sample_edges = list(G_full.edges())[:5000]  # Sample for performance
+                    sample_edges = list(G_full.edges())[:15000]  # Larger sample for visibility at all zoom levels
                     for u, v in sample_edges:
                         edge_data = G_full[u][v]
                         risk_norm = edge_data.get("risk_norm", 0.0)
                         
-                        # Top 5% = red, rest = green
-                        if risk_norm >= 7:
+                        # Above threshold = red (dangerous), rest = green (safe)
+                        if risk_norm >= risk_threshold:
                             color = "red"
                             weight = 2
                             opacity = 0.4
@@ -393,20 +468,22 @@ if st.session_state.user_mode == "Pedestrian":
                         icon=folium.Icon(color="red", icon="stop")
                     ).add_to(m)
                     
-                    # Legend with route metrics
+                    # Legend with route metrics (improved text visibility)
+                    danger_pct = 100 - safety_percentile  # Top X% that are dangerous
+                    safe_pct = safety_percentile  # Bottom X% that are safe
                     legend_html = f'''
                     <div style="position: fixed; 
                          bottom: 50px; left: 50px; width: 280px; height: 160px; 
-                         background-color: white; border:2px solid grey; z-index:9999; 
-                         font-size:14px; padding: 15px; font-weight: bold;">
-                    <p><span style="color: green;">🟢 Green:</span> Safe (95% edges)</p>
-                    <p><span style="color: red;">🔴 Red:</span> DANGER (TOP 5%)</p>
-                    <p><span style="color: blue; font-weight: bold;">🔵 Blue:</span> YOUR SAFEST ROUTE</p>
-                    <hr>
-                    <p><b>📊 ROUTE METRICS:</b></p>
-                    <p>Avg Risk: <span style="color:blue">{avg_risk:.1f}/10</span></p>
-                    <p>Length: <span style="color:green">{total_length:.0f}m</span></p>
-                    <p>High Risk Edges: <span style="color:orange">{high_risk_count}</span></p>
+                         background-color: white; border:2px solid #333; z-index:9999; 
+                         font-size:14px; padding: 15px; color: #000; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+                    <p style="margin: 5px 0; color: #000;"><span style="color: green; font-weight: bold;">🟢 Green:</span> Safe ({safe_pct}% edges)</p>
+                    <p style="margin: 5px 0; color: #000;"><span style="color: red; font-weight: bold;">🔴 Red:</span> DANGER (TOP {danger_pct}%)</p>
+                    <p style="margin: 5px 0; color: #000;"><span style="color: blue; font-weight: bold;">🔵 Blue:</span> YOUR SAFEST ROUTE</p>
+                    <hr style="border-color: #ccc;">
+                    <p style="margin: 5px 0; color: #000; font-weight: bold;">📊 ROUTE METRICS:</p>
+                    <p style="margin: 5px 0; color: #000;">Avg Risk: <span style="color:#0066cc; font-weight: bold;">{avg_risk:.1f}/10</span></p>
+                    <p style="margin: 5px 0; color: #000;">Length: <span style="color:#006600; font-weight: bold;">{total_length:.0f}m</span></p>
+                    <p style="margin: 5px 0; color: #000;">High Risk Edges: <span style="color:#ff6600; font-weight: bold;">{high_risk_count}</span></p>
                     </div>
                     '''
                     m.get_root().html.add_child(folium.Element(legend_html))
@@ -436,9 +513,9 @@ if st.session_state.user_mode == "Pedestrian":
     if "route_calculated" in st.session_state and st.session_state.route_calculated:
         metrics = st.session_state.route_metrics
         
-        # Display map
+        # Display map (returned_objects=[] prevents interaction state from causing reruns)
         st.success(f"✅ Safest route found! ({metrics['num_edges']} segments)")
-        st_folium(st.session_state.route_map, width=1400, height=600, key="route_map_display")
+        st_folium(st.session_state.route_map, width=1400, height=600, key="route_map_display", returned_objects=[])
         
         # Display metrics
         st.subheader("📊 Route Summary")
