@@ -80,10 +80,21 @@ add_seattle_rain_animation()
 # Custom CSS to inject for styling the buttons if needed (optional)
 st.markdown("""
 <style>
-div.stButton > button:first-child {
-    height: 100px;
+div.stButton > button:first-child,
+a.stLinkButton > button:first-child {
+    height: 40px;
     width: 100%;
-    font-size: 20px;
+    font-size: 18px;
+    background-color: #000000 !important;
+    color: white !important;
+    border: 1px solid #000000 !important;
+    padding: 8px 16px !important;
+    line-height: 1.2 !important;
+}
+div.stButton > button:first-child:hover,
+a.stLinkButton > button:first-child:hover {
+    background-color: #333333 !important;
+    border: 1px solid #333333 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -94,20 +105,91 @@ if "user_mode" not in st.session_state:
 
 # --- LANDING PAGE ---
 if st.session_state.user_mode is None:
+    # Load and encode background image as base64
+    import base64
+    from pathlib import Path
+    
+    bg_image_path = Path("seattle_bg.jpg")
+    if bg_image_path.exists():
+        with open(bg_image_path, "rb") as img_file:
+            bg_image_b64 = base64.b64encode(img_file.read()).decode()
+        
+        # Add CSS for background image on landing page
+        st.markdown(f"""
+        <style>
+        /* Landing page background */
+        .stApp {{
+            background-image: url('data:image/jpeg;base64,{bg_image_b64}');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        
+        /* Position content to the right */
+        .main > div {{
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            min-height: 80vh;
+            padding-right: 5rem;
+        }}
+        
+        /* Right-aligned container for content */
+        .main .block-container {{
+            max-width: 50%;
+            margin-left: auto;
+            margin-right: 3rem;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 3rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }}
+        
+        /* Style the title text */
+        h1, h2, h3 {{
+            color: white !important;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            text-align: right;
+        }}
+        
+        /* Make buttons more prominent */
+        div.stButton > button {{
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            color: #333 !important;
+            font-weight: bold;
+            border: 2px solid #fff;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            width: 100%;
+        }}
+        
+        div.stButton > button:hover {{
+            background-color: rgba(255, 255, 255, 1) !important;
+            transform: scale(1.05);
+            transition: all 0.3s ease;
+        }}
+        
+        /* Align columns to the right */
+        div[data-testid="column"] {{
+            text-align: right;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+    
     st.title("Welcome to Seattle Accessibility App")
     st.subheader("Select your mode to continue:")
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([3, 1])
     
     with col1:
+        st.empty()  # Empty space on the left
+            
+    with col2:
         if st.button("🚶 Pedestrian / Wheelchair User"):
             st.session_state.user_mode = "Pedestrian"
             st.rerun()
-            
-    with col2:
-        if st.button("🏛️ Government Official"):
-            st.session_state.user_mode = "Government"
-            st.rerun()
+        st.link_button("🏛️ Government Official", "https://dataviz-88xgpuctij592aareb4xo8.streamlit.app/")
 
 # --- MAIN APP LOGIC ---
 else:
@@ -140,7 +222,6 @@ if st.session_state.user_mode == "Pedestrian":
                 try:
                     with open(graph_cache_file, "rb") as f:
                         G_full = pickle.load(f)
-                    st.success("✅ Loaded from cache!")
                     return G_full
                 except Exception as e:
                     st.warning(f"Cache file corrupted, rebuilding... ({e})")
@@ -253,7 +334,6 @@ if st.session_state.user_mode == "Pedestrian":
     }
     selected_dataset, pred_column, safety_percentile = dataset_mapping[user_type_option]
     
-    st.info(f"ℹ️ Using dataset: **{selected_dataset}** for route calculation")
     st.markdown("---")
     
     # Detect user type change and auto-trigger route recalculation
@@ -473,17 +553,12 @@ if st.session_state.user_mode == "Pedestrian":
                     safe_pct = safety_percentile  # Bottom X% that are safe
                     legend_html = f'''
                     <div style="position: fixed; 
-                         bottom: 50px; left: 50px; width: 280px; height: 160px; 
+                         bottom: 50px; left: 50px; width: 280px; height: 100px; 
                          background-color: white; border:2px solid #333; z-index:9999; 
                          font-size:14px; padding: 15px; color: #000; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
-                    <p style="margin: 5px 0; color: #000;"><span style="color: green; font-weight: bold;">🟢 Green:</span> Safe ({safe_pct}% edges)</p>
-                    <p style="margin: 5px 0; color: #000;"><span style="color: red; font-weight: bold;">🔴 Red:</span> DANGER (TOP {danger_pct}%)</p>
+                    <p style="margin: 5px 0; color: #000;"><span style="color: green; font-weight: bold;">🟢 Green:</span> Safe </p>
+                    <p style="margin: 5px 0; color: #000;"><span style="color: red; font-weight: bold;">🔴 Red:</span> DANGER </p>
                     <p style="margin: 5px 0; color: #000;"><span style="color: blue; font-weight: bold;">🔵 Blue:</span> YOUR SAFEST ROUTE</p>
-                    <hr style="border-color: #ccc;">
-                    <p style="margin: 5px 0; color: #000; font-weight: bold;">📊 ROUTE METRICS:</p>
-                    <p style="margin: 5px 0; color: #000;">Avg Risk: <span style="color:#0066cc; font-weight: bold;">{avg_risk:.1f}/10</span></p>
-                    <p style="margin: 5px 0; color: #000;">Length: <span style="color:#006600; font-weight: bold;">{total_length:.0f}m</span></p>
-                    <p style="margin: 5px 0; color: #000;">High Risk Edges: <span style="color:#ff6600; font-weight: bold;">{high_risk_count}</span></p>
                     </div>
                     '''
                     m.get_root().html.add_child(folium.Element(legend_html))
@@ -514,7 +589,6 @@ if st.session_state.user_mode == "Pedestrian":
         metrics = st.session_state.route_metrics
         
         # Display map (returned_objects=[] prevents interaction state from causing reruns)
-        st.success(f"✅ Safest route found! ({metrics['num_edges']} segments)")
         st_folium(st.session_state.route_map, width=1400, height=600, key="route_map_display", returned_objects=[])
         
         # Display metrics

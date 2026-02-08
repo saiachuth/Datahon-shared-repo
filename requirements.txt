@@ -8,3 +8,6 @@ streamlit-searchbox
 matplotlib
 networkx
 shapely
+plotly
+pydeck
+requests
