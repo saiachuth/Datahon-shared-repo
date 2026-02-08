@@ -186,7 +186,7 @@ if st.session_state.user_mode is None:
         st.empty()  # Empty space on the left
             
     with col2:
-        if st.button("🚶 Pedestrian / Wheelchair User"):
+        if st.button("🚶 Pedestrian "):
             st.session_state.user_mode = "Pedestrian"
             st.rerun()
         st.link_button("🏛️ Government Official", "https://dataviz-88xgpuctij592aareb4xo8.streamlit.app/")
@@ -205,6 +205,28 @@ else:
 # ==========================================
 if st.session_state.user_mode == "Pedestrian":
     st.title("♿ Safe Route Finder")
+    
+    # Custom CSS for Find Safe Route button
+    st.markdown("""
+    <style>
+    /* Style for the Find Safe Route button */
+    div[data-testid="stForm"] button[kind="primaryFormSubmit"],
+    div.stButton > button:first-child {
+        background-color: #1E90FF !important;  /* Dodger Blue */
+        color: white !important;
+        border: 2px solid #1E90FF !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+    div[data-testid="stForm"] button[kind="primaryFormSubmit"]:hover,
+    div.stButton > button:first-child:hover {
+        background-color: #4169E1 !important;  /* Royal Blue on hover */
+        border: 2px solid #4169E1 !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(30, 144, 255, 0.3);
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     # Load graph with GNN predictions (cached)
     @st.cache_resource
@@ -320,7 +342,7 @@ if st.session_state.user_mode == "Pedestrian":
     st.subheader("Select User Type")
     user_type_option = st.radio(
         "Choose the accessibility profile for route optimization:",
-        options=["🚶 Normal User", "👁️ Blind Assistance", "♿ Mobility Issue"],
+        options=["🚶 Standardized Navigation", "👁️ Vision Assistance", "♿ Mobility Assistance"],
         index=0,
         horizontal=True,
         key="user_type_selection"
@@ -328,9 +350,9 @@ if st.session_state.user_mode == "Pedestrian":
     
     # Map user selection to dataset file, prediction column, and safety percentile threshold
     dataset_mapping = {
-        "🚶 Normal User": ("normal_user.csv", "pred_normal", 90),  # Top 5% are dangerous
-        "👁️ Blind Assistance": ("blind_assitance.csv", "pred_blind", 80),  # Top 10% are dangerous
-        "♿ Mobility Issue": ("mobility_issue_assistance.csv", "pred", 85)  # Top 15% are dangerous
+        "🚶 Standardized Navigation": ("normal_user.csv", "pred_normal", 90),  # Top 5% are dangerous
+        "👁️ Vision Assistance": ("blind_assitance.csv", "pred_blind", 80),  # Top 10% are dangerous
+        "♿ Mobility Assistance": ("mobility_issue_assistance.csv", "pred", 85)  # Top 15% are dangerous
     }
     selected_dataset, pred_column, safety_percentile = dataset_mapping[user_type_option]
     
@@ -364,7 +386,7 @@ if st.session_state.user_mode == "Pedestrian":
         start_loc_selection = st_searchbox(
             search_locationiq,
             key="start_loc_search",
-            label="From (Start Location)",
+            label="🟢 From (Start Location)",
             placeholder="Magnolia Park, 1461, Magnolia Boulevard West, Seattle, WA, 98199",
             default=None
         )
@@ -372,7 +394,7 @@ if st.session_state.user_mode == "Pedestrian":
         end_loc_selection = st_searchbox(
             search_locationiq,
             key="end_loc_search",
-            label="To (Destination)",
+            label="🔴 To (Destination)",
             placeholder="All City Fence Co., 36, South Hudson Street, Georgetown, Seattle",
             default=None
         )
@@ -383,22 +405,7 @@ if st.session_state.user_mode == "Pedestrian":
     if end_loc_selection:
         st.session_state.end_coords = end_loc_selection
     
-    # Display current selections
-    st.markdown("**Current Selection:**")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if isinstance(st.session_state.start_coords, tuple) and len(st.session_state.start_coords) == 2:
-            if isinstance(st.session_state.start_coords[1], tuple):
-                st.caption(f"🟢 From: {st.session_state.start_coords[0]}")
-            else:
-                st.caption(f"🟢 From: {st.session_state.start_coords}")
-    with col_b:
-        if isinstance(st.session_state.end_coords, tuple) and len(st.session_state.end_coords) == 2:
-            if isinstance(st.session_state.end_coords[1], tuple):
-                st.caption(f"🔴 To: {st.session_state.end_coords[0]}")
-            else:
-                st.caption(f"🔴 To: {st.session_state.end_coords}")
-    
+
     # Only save to JSON when both are selected (avoid writing file on every rerun)
     # This prevents unnecessary file I/O that could cause glitches
     
@@ -414,38 +421,42 @@ if st.session_state.user_mode == "Pedestrian":
         else:
             import math  # Import here for route calculation
             
-            # Load graph with selected dataset
-            G_full = load_graph_with_predictions(selected_dataset, pred_column)
-            
-            # Extract coordinates - handle both tuple formats
-            # st_searchbox returns (display_name, (lat, lon))
-            if isinstance(st.session_state.start_coords, tuple) and len(st.session_state.start_coords) == 2:
-                if isinstance(st.session_state.start_coords[1], tuple):
-                    # Format: (display_name, (lat, lon))
-                    start_display = st.session_state.start_coords[0]
-                    start_lat, start_lon = st.session_state.start_coords[1]
-                else:
-                    # Format: (lat, lon)
-                    start_lat, start_lon = st.session_state.start_coords
-                    start_display = f"{start_lat}, {start_lon}"
-            else:
-                st.error("Invalid start coordinate format")
-                st.stop()
+            # Show loading status with progress updates
+            with st.status("🔄 Finding your safest route...", expanded=True) as status:
+                # Load graph with selected dataset
+                st.write("📊 Loading street network data...")
+                G_full = load_graph_with_predictions(selected_dataset, pred_column)
                 
-            if isinstance(st.session_state.end_coords, tuple) and len(st.session_state.end_coords) == 2:
-                if isinstance(st.session_state.end_coords[1], tuple):
-                    # Format: (display_name, (lat, lon))
-                    end_display = st.session_state.end_coords[0]
-                    end_lat, end_lon = st.session_state.end_coords[1]
+                # Extract coordinates - handle both tuple formats
+                st.write("📍 Extracting coordinates...")
+                # st_searchbox returns (display_name, (lat, lon))
+                if isinstance(st.session_state.start_coords, tuple) and len(st.session_state.start_coords) == 2:
+                    if isinstance(st.session_state.start_coords[1], tuple):
+                        # Format: (display_name, (lat, lon))
+                        start_display = st.session_state.start_coords[0]
+                        start_lat, start_lon = st.session_state.start_coords[1]
+                    else:
+                        # Format: (lat, lon)
+                        start_lat, start_lon = st.session_state.start_coords
+                        start_display = f"{start_lat}, {start_lon}"
                 else:
-                    # Format: (lat, lon)
-                    end_lat, end_lon = st.session_state.end_coords
-                    end_display = f"{end_lat}, {end_lon}"
-            else:
-                st.error("Invalid end coordinate format")
-                st.stop()
-            
-            with st.spinner(f"Finding safest route from **{start_display}** to **{end_display}**..."):
+                    st.error("Invalid start coordinate format")
+                    st.stop()
+                    
+                if isinstance(st.session_state.end_coords, tuple) and len(st.session_state.end_coords) == 2:
+                    if isinstance(st.session_state.end_coords[1], tuple):
+                        # Format: (display_name, (lat, lon))
+                        end_display = st.session_state.end_coords[0]
+                        end_lat, end_lon = st.session_state.end_coords[1]
+                    else:
+                        # Format: (lat, lon)
+                        end_lat, end_lon = st.session_state.end_coords
+                        end_display = f"{end_lat}, {end_lon}"
+                else:
+                    st.error("Invalid end coordinate format")
+                    st.stop()
+                
+                st.write(f"🗺️ Calculating route from **{start_display}** to **{end_display}**...")
                 try:
                     # Find nearest nodes
                     orig_node = ox.distance.nearest_nodes(G_full, X=start_lon, Y=start_lat)
@@ -458,6 +469,7 @@ if st.session_state.user_mode == "Pedestrian":
                         return math.sqrt((y1 - y2)**2 + (x1 - x2)**2)
                     
                     # A* using wheelchair_cost (AVOIDS high-risk edges)
+                    st.write("🛣️ Finding optimal path using A* algorithm...")
                     path_nodes = nx.astar_path(
                         G_full,
                         source=orig_node,
@@ -467,6 +479,7 @@ if st.session_state.user_mode == "Pedestrian":
                     )
                     
                     # Calculate dynamic risk threshold based on safety_percentile
+                    st.write("📈 Calculating route safety metrics...")
                     all_risks = [G_full[u][v].get("risk_norm", 0.0) for u, v in G_full.edges()]
                     risk_threshold = np.percentile(all_risks, safety_percentile)
                     
@@ -492,6 +505,7 @@ if st.session_state.user_mode == "Pedestrian":
                     num_edges = len(route_edges)
                     
                     # Create Folium map
+                    st.write("🗺️ Generating interactive map visualization...")
                     m = folium.Map(
                         location=[(start_lat + end_lat) / 2, (start_lon + end_lon) / 2],
                         zoom_start=13,
@@ -575,6 +589,9 @@ if st.session_state.user_mode == "Pedestrian":
                     }
                     st.session_state.route_calculated = True
                     
+                    # Update status to complete
+                    status.update(label="✅ Route found successfully!", state="complete", expanded=False)
+                    
                 except nx.NetworkXNoPath:
                     st.error("❌ No route found between these locations. Please try different points.")
                     st.session_state.route_calculated = False
@@ -598,8 +615,9 @@ if st.session_state.user_mode == "Pedestrian":
             st.metric("Average Risk Score", f"{metrics['avg_risk']:.1f}/10", 
                      "Lower is safer" if metrics['avg_risk'] < 5 else "Use caution")
         with col2:
+            miles = metrics['total_length'] * 0.000621371
             st.metric("Total Distance", f"{metrics['total_length']:.0f} m", 
-                     f"{metrics['total_length']/1000:.1f} km")
+                     f"{metrics['total_length']/1000:.1f} km / {miles:.2f} mi")
         with col3:
             st.metric("Number of Segments", metrics['num_edges'])
         with col4:
@@ -607,10 +625,17 @@ if st.session_state.user_mode == "Pedestrian":
             st.metric("Safety Score", f"{safety_score:.1f}%", 
                      "Excellent!" if safety_score > 95 else "Good")
         
-        # Print summary
+        # Print summary with custom message based on user type
+        if user_type_option == "🚶 Standardized Navigation":
+            route_description = "This is the optimal pedestrian route optimized for general accessibility needs"
+        elif user_type_option == "�️ Vision Assistance":
+            route_description = "This is the safest route optimized for visually impaired users with enhanced obstacle avoidance"
+        else:  # Mobility Assistance
+            route_description = "This is the safest wheelchair-accessible route with optimized terrain and surface quality"
+        
         st.info(f"""
         **🛤️ Route Complete!**
-        - This is the safest wheelchair-accessible route based on AI predictions
+        - {route_description}
         - The route avoids high-risk edges (red) wherever possible
         - Average risk: {metrics['avg_risk']:.2f}/10 (Lower is better)
         - High-risk segments: {metrics['high_risk_count']} out of {metrics['num_edges']} ({100*metrics['high_risk_count']/max(metrics['num_edges'],1):.1f}%)
