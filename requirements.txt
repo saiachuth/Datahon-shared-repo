@@ -4,3 +4,7 @@ folium
 streamlit-folium
 mapclassify
 osmnx
+streamlit-searchbox
+matplotlib
+networkx
+shapely
