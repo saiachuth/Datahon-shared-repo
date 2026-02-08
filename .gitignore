@@ -2,4 +2,8 @@ venv/
 __pycache__/
 .DS_Store
 *.pyc
-data/*
+*.json
+*.csv
+*.graphml
+*.geojson
+
